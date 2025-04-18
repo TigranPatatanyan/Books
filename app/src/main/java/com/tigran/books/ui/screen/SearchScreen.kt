@@ -57,7 +57,7 @@ fun SearchScreen(
 
     //couldn't find another Working method for catching paging error
     LaunchedEffect(books.loadState) {
-        if (books.loadState.hasError){
+        if (books.loadState.hasError && uiState.query.isEmpty()){
             viewModel.handleIntent(BookIntent.NotifyNetworkError)
         }
     }
