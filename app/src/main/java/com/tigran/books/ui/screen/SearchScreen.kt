@@ -2,7 +2,6 @@ package com.tigran.books.ui.screen
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -42,7 +41,6 @@ import coil.compose.rememberAsyncImagePainter
 import com.tigran.books.navigation.Screen
 import com.tigran.books.ui.viewmodel.BookIntent
 import com.tigran.books.ui.viewmodel.BookViewModel
-import com.tigran.books.ui.viewmodel.LoadingState
 import com.tigran.domain.model.Book
 
 @Composable
