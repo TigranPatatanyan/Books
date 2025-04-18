@@ -5,6 +5,7 @@ import com.tigran.data.mapper.toDomain
 import com.tigran.data.mapper.toEntities
 import com.tigran.domain.model.Book
 import com.tigran.domain.repository.BookLocalRepository
+import kotlinx.coroutines.delay
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okio.buffer
@@ -16,7 +17,10 @@ class BookLocalRepositoryImpl(private val dao: BookDao) : BookLocalRepository {
         return dao.getAllBooksWithAuthors().map { it.toDomain() }
     }
 
-    override suspend fun cacheBooks(books: List<Book>, filesDir: String) {
+    override suspend fun cacheBooks(
+        books: List<Book>, filesDir: String, onProgress: (current: Int, total: Int) -> Unit
+    ) {
+        val total = books.size
         books.forEachIndexed { index, book ->
             val smallPath = book.smallThumbnailUrl?.let {
                 downloadImageAndSave(filesDir, it, "small_${book.id}_$index.jpg")
@@ -26,14 +30,15 @@ class BookLocalRepositoryImpl(private val dao: BookDao) : BookLocalRepository {
             }
 
             val bookWithPaths = book.copy(
-                smallThumbnailPath = smallPath,
-                thumbnailPath = thumbPath
+                smallThumbnailPath = smallPath, thumbnailPath = thumbPath
             )
 
             val (bookEntity, authors, crossRefs) = bookWithPaths.toEntities()
             dao.insertBook(bookEntity)
             dao.insertAuthors(authors)
             dao.insertCrossRefs(crossRefs)
+            onProgress(index + 1, total)
+            delay(3000)
         }
     }
 

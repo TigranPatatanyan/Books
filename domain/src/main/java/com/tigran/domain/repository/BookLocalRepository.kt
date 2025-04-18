@@ -4,5 +4,7 @@ import com.tigran.domain.model.Book
 
 interface BookLocalRepository {
     suspend fun getCachedBooks(): List<Book>
-    suspend fun cacheBooks(books: List<Book>, filesDir: String)
+    suspend fun cacheBooks(
+        books: List<Book>, filesDir: String, onProgress: (current: Int, total: Int) -> Unit
+    )
 }

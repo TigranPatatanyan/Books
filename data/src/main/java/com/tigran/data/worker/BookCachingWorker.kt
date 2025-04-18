@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -21,47 +22,82 @@ import kotlinx.serialization.json.Json
 
 @HiltWorker
 class BookCachingWorker @AssistedInject constructor(
-    @Assisted context: Context,
+    @Assisted private val context: Context,
     @Assisted workerParams: WorkerParameters,
     private val repository: BookLocalRepository
 ) : CoroutineWorker(context, workerParams) {
 
+    private val channelId = "book_download_channel"
+    private val notificationId = 1001
+
     override suspend fun doWork(): Result {
         val booksJson = inputData.getString("books") ?: return Result.failure()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            val books = Json.decodeFromString<List<Book>>(booksJson)
-            repository.cacheBooks(books, applicationContext.filesDir.path)
-            return Result.success()
+
+        val books = try {
+            Json.decodeFromString<List<Book>>(booksJson)
+        } catch (e: Exception) {
+            Log.e("BookCachingWorker", "Failed to parse books JSON", e)
+            return Result.failure()
         }
-        setForeground(createForegroundInfo())
+
+        val hasNotificationPermission =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.POST_NOTIFICATIONS
+                    ) == PackageManager.PERMISSION_GRANTED
+
+        if (hasNotificationPermission) {
+            createNotificationChannel()
+        }
+
         return try {
-            val books = Json.decodeFromString<List<Book>>(booksJson)
-            repository.cacheBooks(books, applicationContext.filesDir.path)
-            NotificationManagerCompat.from(applicationContext).cancel(1001)
+            repository.cacheBooks(books, context.filesDir.path) { current, total ->
+                Log.d("BookCachingWorker", "Caching book $current of $total")
+                if (hasNotificationPermission) {
+                    val notification = buildNotification(current, total)
+                    NotificationManagerCompat.from(context).notify(notificationId, notification)
+                }
+            }
+
+            if (hasNotificationPermission) {
+                NotificationManagerCompat.from(context).cancel(notificationId)
+            }
+
             Result.success()
         } catch (e: Exception) {
-            Result.retry()
+            Log.e("BookCachingWorker", "Error during book caching", e)
+            Result.failure()
         }
     }
 
-    private fun createForegroundInfo(): ForegroundInfo {
-        val channelId = "book_download_channel"
-        val notificationId = 1001
-        val channel = NotificationChannel(
-            channelId,
-            "Book Download",
-            NotificationManager.IMPORTANCE_LOW
-        )
-        NotificationManagerCompat.from(applicationContext).createNotificationChannel(channel)
-        val notification = NotificationCompat.Builder(applicationContext, channelId)
-            .setContentTitle("Downloading books")
-            .setContentText("Please wait while books are being cached.")
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        //This will be called by the system when needed
+        return createForegroundInfo(0, 0)
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "Book Download",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            NotificationManagerCompat.from(context).createNotificationChannel(channel)
+        }
+    }
+
+    private fun createForegroundInfo(current: Int, total: Int): ForegroundInfo {
+        val notification = buildNotification(current, total)
+        return ForegroundInfo(notificationId, notification)
+    }
+
+    private fun buildNotification(current: Int, total: Int): android.app.Notification {
+        return NotificationCompat.Builder(context, channelId)
+            .setContentTitle("Caching books")
+            .setContentText("Caching $current of $total")
             .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setProgress(total, current, false)
             .setOngoing(true)
             .build()
-        return ForegroundInfo(notificationId, notification)
     }
 }
